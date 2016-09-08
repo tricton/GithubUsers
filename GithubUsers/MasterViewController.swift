@@ -8,87 +8,136 @@
 
 import UIKit
 
-class MasterViewController: UITableViewController {
+protocol MasterViewControllerOutput
+{
+  var users: [UserModel] { get set }
+  
+  func requestUsers()
+}
 
-  var detailViewController: DetailViewController? = nil
-  var objects = [AnyObject]()
+protocol DetailViewControllerOutput
+{
+  var users: [UserModel] { get set }
+  
+  func requestFollowers(currentUser: UserModel?)
+}
 
+class MasterViewController: UITableViewController
+{
+  var masterMode = true
+  var currentUser: UserModel?
 
-  override func viewDidLoad() {
+//  MARK: Delegates
+  
+  var masterOutput: MasterViewControllerOutput?
+  var detailOutput: DetailViewControllerOutput?
+  
+  private var users: [UserModel] {
+    if let users = self.masterMode ? self.masterOutput?.users : self.detailOutput?.users { return  users }
+    else { return [UserModel]() }
+  }
+  
+//  MARK: Object lifecycle
+  
+  override func viewDidLoad()
+  {
+    configureEnvironment()
     super.viewDidLoad()
-    // Do any additional setup after loading the view, typically from a nib.
-    self.navigationItem.leftBarButtonItem = self.editButtonItem()
-
-    let addButton = UIBarButtonItem(barButtonSystemItem: .Add, target: self, action: #selector(insertNewObject(_:)))
-    self.navigationItem.rightBarButtonItem = addButton
-    if let split = self.splitViewController {
-        let controllers = split.viewControllers
-        self.detailViewController = (controllers[controllers.count-1] as! UINavigationController).topViewController as? DetailViewController
-    }
+    setupViews()
+    initialLoading()
   }
-
-  override func viewWillAppear(animated: Bool) {
-    self.clearsSelectionOnViewWillAppear = self.splitViewController!.collapsed
-    super.viewWillAppear(animated)
+  
+  private func configureEnvironment() {
+    MasterConfigurator.configure(self, masterMode: masterMode)
   }
-
-  override func didReceiveMemoryWarning() {
+  
+  override func didReceiveMemoryWarning()
+  {
     super.didReceiveMemoryWarning()
     // Dispose of any resources that can be recreated.
   }
-
-  func insertNewObject(sender: AnyObject) {
-    objects.insert(NSDate(), atIndex: 0)
-    let indexPath = NSIndexPath(forRow: 0, inSection: 0)
-    self.tableView.insertRowsAtIndexPaths([indexPath], withRowAnimation: .Automatic)
+  
+//  MARK:
+  
+  private func setupViews()
+  {
+    if masterMode {
+      setupRefreshController()
+    }
+    else {
+      refreshControl = nil
+    }
   }
-
-  // MARK: - Segues
-
-  override func prepareForSegue(segue: UIStoryboardSegue, sender: AnyObject?) {
-    if segue.identifier == "showDetail" {
-        if let indexPath = self.tableView.indexPathForSelectedRow {
-            let object = objects[indexPath.row] as! NSDate
-            let controller = (segue.destinationViewController as! UINavigationController).topViewController as! DetailViewController
-            controller.detailItem = object
-            controller.navigationItem.leftBarButtonItem = self.splitViewController?.displayModeButtonItem()
-            controller.navigationItem.leftItemsSupplementBackButton = true
-        }
+  
+  private func setupRefreshController()
+  {
+    refreshControl?.addTarget(self, action: #selector(getMoreGithubUsers), forControlEvents: .ValueChanged)
+  }
+  
+  private func initialLoading()
+  {
+    getMoreGithubUsers() 
+  }
+  
+  @objc private func getMoreGithubUsers()
+  {
+    if masterMode {
+      masterOutput?.requestUsers()
+    }
+    else {
+      detailOutput?.requestFollowers(currentUser)
     }
   }
 
   // MARK: - Table View
 
-  override func numberOfSectionsInTableView(tableView: UITableView) -> Int {
+  override func numberOfSectionsInTableView(tableView: UITableView) -> Int
+  {
     return 1
   }
 
-  override func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-    return objects.count
+  override func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int
+  {
+    return users.count
   }
 
-  override func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
-    let cell = tableView.dequeueReusableCellWithIdentifier("Cell", forIndexPath: indexPath)
-
-    let object = objects[indexPath.row] as! NSDate
-    cell.textLabel!.text = object.description
-    return cell
+  override func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell
+  {
+    tableView.deselectRowAtIndexPath(indexPath, animated: true)
+    if let cell = tableView.dequeueReusableCellWithIdentifier("Cell", forIndexPath: indexPath) as? UserCell {
+      cell.setupUserCell(users[indexPath.row])
+      return cell
+    }
+    return UITableViewCell()
   }
-
-  override func tableView(tableView: UITableView, canEditRowAtIndexPath indexPath: NSIndexPath) -> Bool {
-    // Return false if you do not want the specified item to be editable.
-    return true
-  }
-
-  override func tableView(tableView: UITableView, commitEditingStyle editingStyle: UITableViewCellEditingStyle, forRowAtIndexPath indexPath: NSIndexPath) {
-    if editingStyle == .Delete {
-        objects.removeAtIndex(indexPath.row)
-        tableView.deleteRowsAtIndexPaths([indexPath], withRowAnimation: .Fade)
-    } else if editingStyle == .Insert {
-        // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view.
+  
+  override func tableView(tableView: UITableView, didSelectRowAtIndexPath indexPath: NSIndexPath)
+  {
+    if masterMode {
+      showFollowersForUser(users[indexPath.row])
     }
   }
-
-
+  
+  // MARK: - Segues
+  
+  private func showFollowersForUser(user: UserModel)
+  {
+    guard let detailVC = UIStoryboard.init(name: "Main", bundle: nil).instantiateViewControllerWithIdentifier("MasterViewController") as? MasterViewController else { return }
+    detailVC.currentUser = user
+    detailVC.masterMode = false
+    navigationController?.pushViewController(detailVC, animated: true)
+  }
+  
 }
+
+extension MasterViewController: MasterPresenterOutput
+{
+  func presentUsers()
+  {
+    refreshControl?.endRefreshing()
+    tableView.reloadData()
+  }
+}
+
+
 
